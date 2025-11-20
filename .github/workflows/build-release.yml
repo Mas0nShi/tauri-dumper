@@ -1,0 +1,105 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  PROJECT_NAME: ${{ github.event.repository.name }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }} (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          # - os: ubuntu-latest
+          #   target: x86_64-unknown-linux-gnu
+          # - os: ubuntu-latest
+          #   target: aarch64-unknown-linux-gnu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Build binary
+        run: cargo build --verbose --release --target ${{ matrix.target }}
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Strip binary (macOS & Linux)
+        if: runner.os != 'Windows'
+        run: strip "target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }}"
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          staging_dir="staging"
+          mkdir -p "${staging_dir}"
+          
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            binary_name="${{ env.PROJECT_NAME }}.exe"
+            archive_name="${{ env.PROJECT_NAME }}-${{ matrix.target }}.zip"
+            cp "target/${{ matrix.target }}/release/${binary_name}" "${staging_dir}/"
+            cd "${staging_dir}"
+            7z a "../${archive_name}" .
+            cd ..
+          else
+            binary_name="${{ env.PROJECT_NAME }}"
+            archive_name="${{ env.PROJECT_NAME }}-${{ matrix.target }}.tar.gz"
+            cp "target/${{ matrix.target }}/release/${binary_name}" "${staging_dir}/"
+            # cp README.md LICENSE "${staging_dir}/"
+            tar -czvf "${archive_name}" -C "${staging_dir}" .
+          fi
+          
+          echo "ARCHIVE_PATH=${archive_name}" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-${{ matrix.target }}
+          path: ${{ env.ARCHIVE_PATH }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
