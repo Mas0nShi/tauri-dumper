@@ -63,16 +63,31 @@ download_macho() {
     tar -xzf "$FIXTURES_DIR/$pattern" -C "$target_dir"
     rm -f "$FIXTURES_DIR/$pattern"
     
+    # Check exact path first
     if [ -f "$binary_path" ]; then
         echo "✅ $name (macho) - downloaded"
-    else
-        echo "❌ $name (macho) - binary not found: $binary"
-        echo "   Expected path: $binary_path"
-        echo "   Directory contents:"
-        find "$target_dir" -type f -name "*.app" -o -type d -name "*.app" 2>/dev/null | head -10 || true
-        ls -la "$target_dir" 2>/dev/null || true
-        return 1
+        return 0
     fi
+    
+    # Fallback: case-insensitive search (Linux is case-sensitive, macOS is not)
+    local binary_name
+    binary_name=$(basename "$binary")
+    local found_binary
+    found_binary=$(find "$target_dir" -iname "$binary_name" -type f | head -1 || true)
+    
+    if [ -n "$found_binary" ]; then
+        # Create parent directories and symlink to match expected path
+        mkdir -p "$(dirname "$binary_path")"
+        ln -sf "$found_binary" "$binary_path"
+        echo "✅ $name (macho) - downloaded (symlinked for case sensitivity)"
+        return 0
+    fi
+    
+    echo "❌ $name (macho) - binary not found: $binary"
+    echo "   Expected path: $binary_path"
+    echo "   Actual structure:"
+    find "$target_dir" -type f 2>/dev/null | head -20 || true
+    return 1
 }
 
 download_pe() {
