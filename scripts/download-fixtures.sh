@@ -67,6 +67,10 @@ download_macho() {
         echo "✅ $name (macho) - downloaded"
     else
         echo "❌ $name (macho) - binary not found: $binary"
+        echo "   Expected path: $binary_path"
+        echo "   Directory contents:"
+        find "$target_dir" -type f -name "*.app" -o -type d -name "*.app" 2>/dev/null | head -10 || true
+        ls -la "$target_dir" 2>/dev/null || true
         return 1
     fi
 }

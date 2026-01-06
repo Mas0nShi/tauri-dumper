@@ -1,4 +1,7 @@
 /target
 
-tests/fixtures/
+# Ignore downloaded fixture binaries, but keep fixtures.toml
+tests/fixtures/*
+!tests/fixtures/fixtures.toml
+
 .vscode/

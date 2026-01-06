@@ -49,8 +49,10 @@ jobs:
         id: cache-fixtures
         uses: actions/cache@v4
         with:
-          path: tests/fixtures
-          key: fixtures-all-v1
+          path: |
+            tests/fixtures/*_app
+            tests/fixtures/*_win
+          key: fixtures-v2-${{ hashFiles('tests/fixtures/fixtures.toml') }}
 
       - name: Download fixtures
         if: steps.cache-fixtures.outputs.cache-hit != 'true'
