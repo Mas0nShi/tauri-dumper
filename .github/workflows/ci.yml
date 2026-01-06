@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy
+          cache-key: clippy
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [clippy]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: test
+
+      - name: Install p7zip
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
+      - name: Cache fixtures
+        id: cache-fixtures
+        uses: actions/cache@v4
+        with:
+          path: |
+            tests/fixtures/*_app
+            tests/fixtures/*_win
+          key: fixtures-v2-${{ hashFiles('tests/fixtures/fixtures.toml') }}
+
+      - name: Download fixtures
+        if: steps.cache-fixtures.outputs.cache-hit != 'true'
+        run: ./scripts/download-fixtures.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run tests
+        run: cargo test --release -- --nocapture

@@ -1,0 +1,68 @@
+# Test fixtures configuration
+# Used by: scripts/download-fixtures.sh, tests/integration_test.rs
+#
+# Each fixture tests a specific combination of:
+#   - format: Binary format (macho, pe, elf)
+#   - arch: CPU architecture (x64, aarch64)
+#
+# Expected values are tied to specific versions - update when changing versions!
+
+# =============================================================================
+# ChatWise
+# =============================================================================
+
+[[fixture]]
+name = "chatwise"
+format = "macho"
+arch = "aarch64"
+repo = "egoist/chatwise-releases"
+version = "v0.9.76"
+pattern = "ChatWise_aarch64.app.tar.gz"
+extract_dir = "chatwise_app"
+binary = "ChatWise.app/Contents/MacOS/ChatWise"
+description = "Mach-O with LC_DYLD_CHAINED_FIXUPS (modern format)"
+expected_asset_count = 197
+expected_index_html_size = 7678
+
+[[fixture]]
+name = "chatwise"
+format = "pe"
+arch = "x64"
+repo = "egoist/chatwise-releases"
+version = "v0.9.76"
+pattern = "ChatWise_0.9.76_x64-setup.exe"
+extract_dir = "chatwise_win"
+binary = "ChatWise.exe"
+description = "Windows PE (NSIS installer)"
+expected_asset_count = 198
+expected_index_html_size = 7691
+
+# =============================================================================
+# Antigravity Tools
+# =============================================================================
+
+[[fixture]]
+name = "antigravity"
+format = "macho"
+arch = "x64"
+repo = "lbjlaq/Antigravity-Manager"
+version = "v3.3.15"
+pattern = "Antigravity.Tools_x64.app.tar.gz"
+extract_dir = "antigravity_app"
+binary = "Antigravity Tools.app/Contents/MacOS/antigravity_tools"
+description = "Mach-O with LC_DYLD_INFO_ONLY (traditional format)"
+expected_asset_count = 6
+expected_index_html_size = 1984
+
+[[fixture]]
+name = "antigravity"
+format = "pe"
+arch = "x64"
+repo = "lbjlaq/Antigravity-Manager"
+version = "v3.3.15"
+pattern = "Antigravity.Tools_3.3.15_x64-setup.exe"
+extract_dir = "antigravity_win"
+binary = "antigravity_tools.exe"
+description = "Windows PE (NSIS installer)"
+expected_asset_count = 6
+expected_index_html_size = 1984
