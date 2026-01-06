@@ -156,4 +156,3 @@ impl Dumper {
         Ok(decompressed)
     }
 }
-

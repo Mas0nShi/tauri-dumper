@@ -23,12 +23,13 @@ impl BinaryParser for PeParser {
         // PE pointers are virtual addresses relative to image base
         let section = self.sections.first().context("No sections available")?;
 
-        if raw_ptr >= section.virtual_address
-            && raw_ptr < section.virtual_address + section.size
-        {
+        if raw_ptr >= section.virtual_address && raw_ptr < section.virtual_address + section.size {
             Ok(raw_ptr - section.virtual_address + section.file_offset)
         } else {
-            Err(anyhow!("Pointer {:#X} outside .rdata section bounds", raw_ptr))
+            Err(anyhow!(
+                "Pointer {:#X} outside .rdata section bounds",
+                raw_ptr
+            ))
         }
     }
 
@@ -44,4 +45,3 @@ impl BinaryParser for PeParser {
         })
     }
 }
-

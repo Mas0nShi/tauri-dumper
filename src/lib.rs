@@ -6,4 +6,3 @@ pub mod binary;
 pub mod dumper;
 
 pub use dumper::{Asset, Dumper};
-

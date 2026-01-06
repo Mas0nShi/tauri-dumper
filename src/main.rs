@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use normalize_path::NormalizePath;
-use tauri_dumper::Dumper;
 use std::fs::{self, File};
 use std::path::Path;
+use tauri_dumper::Dumper;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]

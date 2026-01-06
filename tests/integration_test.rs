@@ -154,7 +154,11 @@ fn test_fixture(f: &Fixture) -> bool {
 fn test_all_fixtures() {
     let config = load_config();
     let total = config.fixture.len();
-    let tested: usize = config.fixture.iter().map(|f| test_fixture(f) as usize).sum();
+    let tested: usize = config
+        .fixture
+        .iter()
+        .map(|f| test_fixture(f) as usize)
+        .sum();
 
     // Ensure at least one fixture was tested if any binary exists
     let any_exists = config.fixture.iter().any(|f| f.binary_path().exists());

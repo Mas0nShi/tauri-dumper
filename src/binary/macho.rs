@@ -125,4 +125,3 @@ impl BinaryParser for MachOParser {
         })
     }
 }
-

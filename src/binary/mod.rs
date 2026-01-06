@@ -60,9 +60,7 @@ pub fn create_parser(data: &[u8]) -> Result<Box<dyn BinaryParser>> {
 
 fn collect_pe_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
     obj.sections()
-        .filter(|s| {
-            s.name() == Ok(".rdata") && s.kind() == object::SectionKind::ReadOnlyData
-        })
+        .filter(|s| s.name() == Ok(".rdata") && s.kind() == object::SectionKind::ReadOnlyData)
         .filter_map(|s| {
             Some(SectionInfo {
                 virtual_address: s.address(),
@@ -95,4 +93,3 @@ fn collect_macho_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
         })
         .collect()
 }
-
