@@ -1,6 +1,6 @@
 [package]
 name = "tauri-dumper"
-version = "0.1.4-alpha"
+version = "0.1.5"
 edition = "2021"
 authors = ["Mason Shi <fishilir@gmail.com>"]
 license = "MIT"
@@ -11,14 +11,23 @@ exclude = [".cargo/*", ".github/*"]
 keywords = ["reverse-engineering", "tauri-application", "asset-decompressor", "asset-unpacker"]
 
 
+[lib]
+name = "tauri_dumper"
+path = "src/lib.rs"
+
 [[bin]]
 name = "tauri-dumper"
 path = "src/main.rs"
 
 [dependencies]
-object = "0.36"
+object = "0.38"
 memmap2 = "0.9"
-brotli = "7.0"
+brotli = "8.0"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
-normalize-path = "0.2.1"
+normalize-path = "0.2"
+
+[dev-dependencies]
+tempfile = "3.24"
+toml = "0.9"
+serde = { version = "1.0", features = ["derive"] }
