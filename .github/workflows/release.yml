@@ -71,14 +71,12 @@ jobs:
             cp "target/${{ matrix.target }}/release/${binary_name}" "${staging_dir}/"
             tar -czvf "${archive_name}" -C "${staging_dir}" .
           fi
-          
-          echo "ARCHIVE_PATH=${archive_name}" >> $GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PROJECT_NAME }}-${{ matrix.target }}
-          path: ${{ env.ARCHIVE_PATH }}
+          path: ${{ env.PROJECT_NAME }}-${{ matrix.target }}.*
           if-no-files-found: error
 
   release:
