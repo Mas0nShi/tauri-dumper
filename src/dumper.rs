@@ -79,13 +79,17 @@ impl Dumper {
     }
 
     /// Reads an asset header from the given offset.
-    fn read_header(&self, offset: usize) -> Result<&AssetHeader> {
+    fn read_header(&self, offset: usize) -> Result<AssetHeader> {
         if offset + ASSET_HEADER_SIZE > self.mmap.len() {
             return Err(anyhow!("Header offset out of bounds"));
         }
 
-        let chunk = &self.mmap[offset..offset + ASSET_HEADER_SIZE];
-        Ok(unsafe { &*(chunk.as_ptr() as *const AssetHeader) })
+        Ok(AssetHeader {
+            name_ptr: self.parser.read_pointer(&self.mmap, offset)?,
+            name_len: binary::read_u64(&self.mmap, offset + 8)?,
+            data_ptr: self.parser.read_pointer(&self.mmap, offset + 16)?,
+            data_size: binary::read_u64(&self.mmap, offset + 24)?,
+        })
     }
 
     /// Validates that the pointers point to valid data.
