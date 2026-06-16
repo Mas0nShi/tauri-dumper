@@ -30,7 +30,7 @@ jobs:
         with:
           components: clippy
           cache-key: clippy
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     name: Test
@@ -49,11 +49,7 @@ jobs:
         id: cache-fixtures
         uses: actions/cache@v4
         with:
-          path: |
-            tests/fixtures/*_app
-            tests/fixtures/*_win
-            tests/fixtures/*_android
-            tests/fixtures/*_linux
+          path: tests/fixtures
           key: fixtures-v2-${{ hashFiles('tests/fixtures/fixtures.toml') }}
 
       - name: Download fixtures
@@ -63,4 +59,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Run tests
-        run: cargo test --release -- --nocapture
+        run: |
+          cargo test --workspace --all-targets
+          cargo test --release -- --nocapture

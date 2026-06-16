@@ -1,6 +1,6 @@
 [package]
 name = "tauri-dumper"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2021"
 authors = ["Mason Shi <fishilir@gmail.com>"]
 license = "MIT"
@@ -10,6 +10,9 @@ categories = ["security", "command-line-utilities"]
 exclude = [".cargo/*", ".github/*"]
 keywords = ["reverse-engineering", "tauri-application", "asset-decompressor", "asset-unpacker"]
 
+[workspace]
+members = [".", "xtask"]
+default-members = ["."]
 
 [lib]
 name = "tauri_dumper"
@@ -26,8 +29,16 @@ brotli = "8.0"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 normalize-path = "0.2"
+comfy-table = "7.1"
+globset = "0.4"
+indicatif = "0.17"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+thiserror = "2.0"
 
 [dev-dependencies]
 tempfile = "3.24"
 toml = "0.9"
-serde = { version = "1.0", features = ["derive"] }
+assert_cmd = "2.0"
+predicates = "3.1"

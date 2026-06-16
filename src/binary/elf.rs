@@ -1,7 +1,7 @@
 //! ELF binary format parser.
 
 use super::{read_u64, BinaryParser, ScanRange, SectionInfo};
-use anyhow::{anyhow, Result};
+use crate::error::{Error, Result};
 use std::collections::HashMap;
 
 /// ELF parser with support for direct pointers and RELA relative addends.
@@ -19,11 +19,13 @@ impl ElfParser {
         relative_relocations: HashMap<u64, u64>,
     ) -> Result<Self> {
         if sections.is_empty() {
-            anyhow::bail!("No file-backed sections found in ELF file");
+            return Err(Error::NoAssetSection(
+                "ELF file has no file-backed sections".to_string(),
+            ));
         }
 
         if scan_sections.is_empty() {
-            anyhow::bail!("No supported asset section found in ELF file");
+            return Err(Error::NoAssetSection("ELF".to_string()));
         }
 
         Ok(Self {
@@ -39,7 +41,7 @@ impl ElfParser {
             .iter()
             .find(|s| va >= s.virtual_address && va < s.virtual_address + s.size)
             .map(|s| va - s.virtual_address + s.file_offset)
-            .ok_or_else(|| anyhow!("Virtual address {:#X} not found in any section", va))
+            .ok_or(Error::AddressNotMapped(va))
     }
 }
 

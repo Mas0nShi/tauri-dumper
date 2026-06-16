@@ -1,7 +1,7 @@
 //! Mach-O binary format parser.
 
 use super::{BinaryParser, ScanRange, SectionInfo};
-use anyhow::{anyhow, Context, Result};
+use crate::error::{Error, Result};
 use object::macho::{MachHeader64, SegmentCommand64, LC_DYLD_CHAINED_FIXUPS, LC_SEGMENT_64};
 use object::read::macho::MachHeader;
 use object::Endianness;
@@ -44,13 +44,15 @@ impl MachOParser {
     /// Detects the fixup format by analyzing load commands.
     fn detect_fixup_format(data: &[u8]) -> Result<(FixupFormat, u64)> {
         let header = MachHeader64::<Endianness>::parse(data, 0)
-            .map_err(|e| anyhow!("Failed to parse Mach-O header: {}", e))?;
+            .map_err(|e| Error::Message(format!("failed to parse Mach-O header: {e}")))?;
 
-        let endian = header.endian().context("Failed to get endianness")?;
+        let endian = header
+            .endian()
+            .map_err(|e| Error::Message(format!("failed to get Mach-O endianness: {e}")))?;
 
         let mut load_commands = header
             .load_commands(endian, data, 0)
-            .map_err(|e| anyhow!("Failed to parse load commands: {}", e))?;
+            .map_err(|e| Error::Message(format!("failed to parse Mach-O load commands: {e}")))?;
 
         let mut has_chained_fixups = false;
         let mut image_base = 0x100000000u64; // Default for 64-bit Mach-O
@@ -102,7 +104,7 @@ impl MachOParser {
             .iter()
             .find(|s| va >= s.virtual_address && va < s.virtual_address + s.size)
             .map(|s| va - s.virtual_address + s.file_offset)
-            .ok_or_else(|| anyhow!("Virtual address {:#X} not found in any section", va))
+            .ok_or(Error::AddressNotMapped(va))
     }
 }
 
@@ -117,7 +119,7 @@ impl BinaryParser for MachOParser {
         let section = self
             .sections
             .last()
-            .context("No sections found for scanning")?;
+            .ok_or_else(|| Error::NoAssetSection("Mach-O __const".to_string()))?;
 
         Ok(vec![ScanRange {
             start: section.file_offset as usize,
