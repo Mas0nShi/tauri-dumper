@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
-use comfy_table::{presets::UTF8_FULL, Cell, Table};
+use comfy_table::{presets::UTF8_FULL, Table};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri_dumper::asset::AssetTableSummary;
@@ -186,17 +187,7 @@ fn list(binary: &Path, common: &CommonArgs) -> Result<()> {
     if common.json {
         print_json(&table.summary())
     } else if !common.quiet {
-        let mut table_view = Table::new();
-        table_view.load_preset(UTF8_FULL);
-        table_view.set_header(vec!["Asset", "Compressed", "Decompressed"]);
-        for asset in table.assets() {
-            table_view.add_row(vec![
-                Cell::new(asset.name()),
-                Cell::new(asset.compressed_size()),
-                Cell::new(asset.decompressed_size()),
-            ]);
-        }
-        println!("{table_view}");
+        print_asset_tree(&table);
         Ok(())
     } else {
         Ok(())
@@ -322,6 +313,105 @@ fn finish_spinner(spinner: Option<ProgressBar>) {
 fn print_json<T: Serialize>(value: &T) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
+}
+
+#[derive(Default)]
+struct AssetTreeNode {
+    children: BTreeMap<String, AssetTreeNode>,
+    asset: Option<AssetTreeLeaf>,
+}
+
+#[derive(Clone, Copy)]
+struct AssetTreeLeaf {
+    compressed_size: usize,
+    decompressed_size: usize,
+}
+
+fn print_asset_tree(table: &tauri_dumper::AssetTable) {
+    let mut root = AssetTreeNode::default();
+    for asset in table.assets() {
+        root.insert(
+            asset.name(),
+            AssetTreeLeaf {
+                compressed_size: asset.compressed_size(),
+                decompressed_size: asset.decompressed_size(),
+            },
+        );
+    }
+
+    println!("Assets: {}", table.len());
+    print_asset_tree_children(&root, "");
+}
+
+impl AssetTreeNode {
+    fn insert(&mut self, path: &str, asset: AssetTreeLeaf) {
+        let mut node = self;
+        for component in path
+            .trim_start_matches('/')
+            .split('/')
+            .filter(|component| !component.is_empty())
+        {
+            node = node.children.entry(component.to_string()).or_default();
+        }
+        node.asset = Some(asset);
+    }
+}
+
+fn print_asset_tree_children(node: &AssetTreeNode, prefix: &str) {
+    let child_count = node.children.len();
+    for (index, (name, child)) in node.children.iter().enumerate() {
+        let is_last = index + 1 == child_count;
+        let connector = if is_last {
+            "\u{2514}\u{2500}\u{2500} "
+        } else {
+            "\u{251c}\u{2500}\u{2500} "
+        };
+        println!(
+            "{}{}{}{}",
+            prefix,
+            connector,
+            name,
+            asset_tree_size_suffix(child.asset)
+        );
+
+        let next_prefix = if is_last {
+            format!("{prefix}    ")
+        } else {
+            format!("{prefix}\u{2502}   ")
+        };
+        print_asset_tree_children(child, &next_prefix);
+    }
+}
+
+fn asset_tree_size_suffix(asset: Option<AssetTreeLeaf>) -> String {
+    asset.map_or_else(String::new, |asset| {
+        format!(
+            " ({} compressed, {} decompressed)",
+            format_bytes(asset.compressed_size),
+            format_bytes(asset.decompressed_size)
+        )
+    })
+}
+
+fn format_bytes(bytes: usize) -> String {
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+
+    if value < 10.0 {
+        format!("{value:.1} {}", UNITS[unit])
+    } else {
+        format!("{value:.0} {}", UNITS[unit])
+    }
 }
 
 fn print_inspect_summary(summary: &AssetTableSummary) {
