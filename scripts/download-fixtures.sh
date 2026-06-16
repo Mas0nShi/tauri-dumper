@@ -1,7 +1,7 @@
 #!/bin/bash
 # Download test fixtures for integration tests.
 # Configuration: tests/fixtures/fixtures.toml
-# Requires: gh (GitHub CLI), 7z (for PE extraction)
+# Requires: gh (GitHub CLI), 7z (for PE extraction), unzip (for APK extraction)
 
 set -euo pipefail
 
@@ -138,6 +138,46 @@ download_pe() {
     rm -f "$FIXTURES_DIR/$pattern"
 }
 
+download_elf() {
+    local name="$1" repo="$2" version="$3" pattern="$4" extract_dir="$5" binary="$6"
+
+    if ! command -v unzip &> /dev/null; then
+        echo "⚠️  unzip not found. Skipping ELF: $name"
+        echo "   Install: brew install unzip (macOS) / apt install unzip (Linux)"
+        return 0
+    fi
+
+    local target_dir="$FIXTURES_DIR/$extract_dir"
+    local binary_path="$target_dir/$binary"
+
+    if [ -f "$binary_path" ]; then
+        echo "✅ $name (elf) - already exists"
+        return 0
+    fi
+
+    echo "⬇️  Downloading $name (elf)..."
+    mkdir -p "$(dirname "$binary_path")"
+
+    if [ ! -f "$FIXTURES_DIR/$pattern" ]; then
+        gh release download "$version" \
+            --repo "$repo" \
+            --pattern "$pattern" \
+            --dir "$FIXTURES_DIR" --clobber
+    fi
+
+    if unzip -p "$FIXTURES_DIR/$pattern" "$binary" > "$binary_path"; then
+        echo "✅ $name (elf) - downloaded"
+    else
+        echo "❌ $name (elf) - binary not found in APK: $binary"
+        unzip -l "$FIXTURES_DIR/$pattern" | grep '\.so$' || true
+        rm -f "$binary_path"
+        rm -f "$FIXTURES_DIR/$pattern"
+        return 1
+    fi
+
+    rm -f "$FIXTURES_DIR/$pattern"
+}
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -160,6 +200,9 @@ download_fixture() {
             ;;
         pe)
             download_pe "$name" "$repo" "$version" "$pattern" "$extract_dir" "$binary"
+            ;;
+        elf)
+            download_elf "$name" "$repo" "$version" "$pattern" "$extract_dir" "$binary"
             ;;
         *)
             echo "⚠️  Unknown format: $format (fixture: $name)"

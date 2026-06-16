@@ -1,17 +1,16 @@
 //! Binary format parsing abstractions.
 //!
 //! This module provides a unified interface for parsing different binary formats
-//! (PE, Mach-O, Android ELF) with format-specific pointer resolution strategies.
+//! (PE, Mach-O, ELF) with format-specific pointer resolution strategies.
 
-mod android_elf;
+mod elf;
 mod macho;
 mod pe;
 
 use anyhow::Result;
-use object::{BinaryFormat, Object, ObjectKind, ObjectSection, Relocation, RelocationFlags};
-use std::collections::HashMap;
+use object::{BinaryFormat, Object, ObjectSection};
 
-pub use android_elf::AndroidElfParser;
+pub use elf::ElfParser;
 pub use macho::MachOParser;
 pub use pe::PeParser;
 
@@ -37,9 +36,9 @@ pub struct ScanRange {
 pub trait BinaryParser: Send + Sync {
     /// Reads a pointer-sized field from the binary.
     ///
-    /// Most formats store the pointer value directly in the file. Android ELF
-    /// shared objects can store zeroes in relocated pointer fields and keep the
-    /// target address in RELA addends, so parsers may override this.
+    /// Most formats store the pointer value directly in the file. ELF shared
+    /// objects can store zeroes in relocated pointer fields and keep the target
+    /// address in RELA addends, so parsers may override this.
     fn read_pointer(&self, data: &[u8], offset: usize) -> Result<u64> {
         read_u64(data, offset)
     }
@@ -55,6 +54,10 @@ pub trait BinaryParser: Send + Sync {
 
 /// Creates the appropriate binary parser based on the detected format.
 pub fn create_parser(data: &[u8]) -> Result<Box<dyn BinaryParser>> {
+    if elf::is_elf(data) {
+        return Ok(Box::new(ElfParser::parse(data)?));
+    }
+
     let obj = object::File::parse(data)?;
 
     match obj.format() {
@@ -65,22 +68,6 @@ pub fn create_parser(data: &[u8]) -> Result<Box<dyn BinaryParser>> {
         BinaryFormat::MachO => {
             let sections = collect_macho_sections(&obj);
             Ok(Box::new(MachOParser::new(data, sections)?))
-        }
-        BinaryFormat::Elf => {
-            if obj.kind() != ObjectKind::Dynamic {
-                anyhow::bail!(
-                    "Unsupported ELF format: only Android Tauri shared libraries are supported"
-                );
-            }
-
-            let sections = collect_android_elf_sections(&obj);
-            let scan_sections = collect_android_elf_scan_sections(&obj);
-            let relative_relocations = collect_android_elf_relative_relocations(&obj, &sections);
-            Ok(Box::new(AndroidElfParser::new(
-                sections,
-                scan_sections,
-                relative_relocations,
-            )?))
         }
         other => anyhow::bail!("Unsupported binary format: {:?}", other),
     }
@@ -107,94 +94,6 @@ fn collect_pe_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
             })
         })
         .collect()
-}
-
-fn collect_android_elf_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
-    obj.sections()
-        .filter(|s| s.address() != 0)
-        .filter_map(section_info)
-        .collect()
-}
-
-fn collect_android_elf_scan_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
-    let mut sections = obj
-        .sections()
-        .filter_map(|s| {
-            let name = s.name().ok()?;
-            let priority = if name == ".data.rel.ro" || name.starts_with(".data.rel.ro.") {
-                0
-            } else if name == ".rodata" {
-                1
-            } else if name == ".data" {
-                2
-            } else {
-                return None;
-            };
-
-            Some((priority, section_info(s)?))
-        })
-        .collect::<Vec<_>>();
-
-    sections.sort_by_key(|(priority, _)| *priority);
-    sections.into_iter().map(|(_, section)| section).collect()
-}
-
-fn collect_android_elf_relative_relocations<'a>(
-    obj: &object::File<'a>,
-    sections: &[SectionInfo],
-) -> HashMap<u64, u64> {
-    obj.dynamic_relocations()
-        .into_iter()
-        .flatten()
-        .filter_map(|(address, relocation)| {
-            if !is_elf_relative_relocation(&relocation) || relocation.has_implicit_addend() {
-                return None;
-            }
-
-            let addend = u64::try_from(relocation.addend()).ok()?;
-            let file_offset = va_to_file_offset(sections, address)?;
-            Some((file_offset, addend))
-        })
-        .collect()
-}
-
-fn is_elf_relative_relocation(relocation: &Relocation) -> bool {
-    match relocation.flags() {
-        RelocationFlags::Elf { r_type } => {
-            r_type == object::elf::R_386_RELATIVE
-                || r_type == object::elf::R_ARM_RELATIVE
-                || r_type == object::elf::R_AARCH64_RELATIVE
-                || r_type == object::elf::R_X86_64_RELATIVE
-                || r_type == object::elf::R_X86_64_RELATIVE64
-                || r_type == object::elf::R_RISCV_RELATIVE
-        }
-        _ => false,
-    }
-}
-
-fn va_to_file_offset(sections: &[SectionInfo], va: u64) -> Option<u64> {
-    sections
-        .iter()
-        .find(|s| va >= s.virtual_address && va < s.virtual_address + s.size)
-        .map(|s| va - s.virtual_address + s.file_offset)
-}
-
-fn section_info<'data, S>(section: S) -> Option<SectionInfo>
-where
-    S: ObjectSection<'data>,
-{
-    let (file_offset, file_size) = section.file_range()?;
-    let size = section.size().min(file_size);
-
-    if size == 0 {
-        return None;
-    }
-
-    Some(SectionInfo {
-        virtual_address: section.address(),
-        file_offset,
-        size,
-    })
 }
 
 fn collect_macho_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
