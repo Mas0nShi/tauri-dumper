@@ -66,3 +66,37 @@ binary = "antigravity_tools.exe"
 description = "Windows PE (NSIS installer)"
 expected_asset_count = 6
 expected_index_html_size = 1984
+
+# =============================================================================
+# LibreTV
+# =============================================================================
+
+[[fixture]]
+name = "libretv"
+format = "elf"
+arch = "x64"
+repo = "KeyRotate/LibreTV-App"
+version = "v1.0.144"
+pattern = "libretv_1.0.144_amd64.deb"
+extract_dir = "libretv_linux"
+binary = "usr/bin/app"
+description = "Linux x86_64 ELF from DEB package with direct asset pointers"
+expected_asset_count = 56
+expected_index_html_size = 39267
+
+# =============================================================================
+# EndWikiPlus
+# =============================================================================
+
+[[fixture]]
+name = "end-wikiplus"
+format = "elf"
+arch = "aarch64"
+repo = "EIHRTeam/End-WikiPlus"
+version = "0.2.3-alpha"
+pattern = "EndWikiplus-arm64v8a-0.2.3.apk"
+extract_dir = "end_wikiplus_android"
+binary = "lib/arm64-v8a/libapp_lib.so"
+description = "Android Tauri APK shared object with RELA pointer addends"
+expected_asset_count = 76
+expected_index_html_size = 723

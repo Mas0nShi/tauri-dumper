@@ -42,8 +42,8 @@ jobs:
         with:
           cache-key: test
 
-      - name: Install p7zip
-        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+      - name: Install archive tools
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full unzip
 
       - name: Cache fixtures
         id: cache-fixtures
@@ -52,6 +52,8 @@ jobs:
           path: |
             tests/fixtures/*_app
             tests/fixtures/*_win
+            tests/fixtures/*_android
+            tests/fixtures/*_linux
           key: fixtures-v2-${{ hashFiles('tests/fixtures/fixtures.toml') }}
 
       - name: Download fixtures

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Download test fixtures for integration tests.
 # Configuration: tests/fixtures/fixtures.toml
-# Requires: gh (GitHub CLI), 7z (for PE extraction)
+# Requires: gh (GitHub CLI), 7z (for PE/DEB extraction), unzip (for APK extraction)
 
 set -euo pipefail
 
@@ -138,6 +138,91 @@ download_pe() {
     rm -f "$FIXTURES_DIR/$pattern"
 }
 
+download_elf() {
+    local name="$1" repo="$2" version="$3" pattern="$4" extract_dir="$5" binary="$6"
+
+    local target_dir="$FIXTURES_DIR/$extract_dir"
+    local binary_path="$target_dir/$binary"
+
+    if [ -f "$binary_path" ]; then
+        echo "✅ $name (elf) - already exists"
+        return 0
+    fi
+
+    echo "⬇️  Downloading $name (elf)..."
+    mkdir -p "$(dirname "$binary_path")"
+
+    if [ ! -f "$FIXTURES_DIR/$pattern" ]; then
+        gh release download "$version" \
+            --repo "$repo" \
+            --pattern "$pattern" \
+            --dir "$FIXTURES_DIR" --clobber
+    fi
+
+    case "$pattern" in
+        *.apk)
+            if ! command -v unzip &> /dev/null; then
+                echo "⚠️  unzip not found. Skipping APK ELF: $name"
+                echo "   Install: brew install unzip (macOS) / apt install unzip (Linux)"
+                return 0
+            fi
+
+            if unzip -p "$FIXTURES_DIR/$pattern" "$binary" > "$binary_path"; then
+                echo "✅ $name (elf) - downloaded"
+            else
+                echo "❌ $name (elf) - binary not found in APK: $binary"
+                unzip -l "$FIXTURES_DIR/$pattern" | grep '\.so$' || true
+                rm -f "$binary_path"
+                rm -f "$FIXTURES_DIR/$pattern"
+                return 1
+            fi
+            ;;
+        *.deb)
+            if ! command -v 7z &> /dev/null; then
+                echo "⚠️  7z not found. Skipping DEB ELF: $name"
+                echo "   Install: brew install p7zip (macOS) / apt install p7zip-full (Linux)"
+                return 0
+            fi
+
+            local temp_dir data_archive found_binary
+            temp_dir=$(mktemp -d)
+            7z x "$FIXTURES_DIR/$pattern" -o"$temp_dir" -y > /dev/null
+            data_archive=$(find "$temp_dir" -maxdepth 1 -name 'data.tar*' -type f | head -1 || true)
+
+            if [ -z "$data_archive" ]; then
+                echo "❌ $name (elf) - data archive not found in DEB"
+                rm -rf "$temp_dir"
+                rm -f "$FIXTURES_DIR/$pattern"
+                return 1
+            fi
+
+            7z x "$data_archive" -o"$temp_dir/root" -y > /dev/null
+            found_binary="$temp_dir/root/$binary"
+
+            if [ -f "$found_binary" ]; then
+                cp "$found_binary" "$binary_path"
+                echo "✅ $name (elf) - downloaded"
+            else
+                echo "❌ $name (elf) - binary not found in DEB: $binary"
+                find "$temp_dir/root" -type f | head -40 || true
+                rm -rf "$temp_dir"
+                rm -f "$binary_path"
+                rm -f "$FIXTURES_DIR/$pattern"
+                return 1
+            fi
+
+            rm -rf "$temp_dir"
+            ;;
+        *)
+            echo "❌ $name (elf) - unsupported package type: $pattern"
+            rm -f "$FIXTURES_DIR/$pattern"
+            return 1
+            ;;
+    esac
+
+    rm -f "$FIXTURES_DIR/$pattern"
+}
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -160,6 +245,9 @@ download_fixture() {
             ;;
         pe)
             download_pe "$name" "$repo" "$version" "$pattern" "$extract_dir" "$binary"
+            ;;
+        elf)
+            download_elf "$name" "$repo" "$version" "$pattern" "$extract_dir" "$binary"
             ;;
         *)
             echo "⚠️  Unknown format: $format (fixture: $name)"

@@ -43,12 +43,29 @@ impl Dumper {
 
     /// Scans the binary for embedded assets.
     pub fn scan_assets(&self) -> Result<Vec<Asset>> {
-        let range = self.parser.scan_range()?;
-        let end = range.start.saturating_add(range.length);
-
-        assert!(end <= self.mmap.len(), "Scan range exceeds file bounds");
-
         let mut assets = Vec::new();
+
+        for range in self.parser.scan_ranges()? {
+            self.scan_assets_in_range(range, &mut assets)?;
+        }
+
+        Ok(assets)
+    }
+
+    fn scan_assets_in_range(
+        &self,
+        range: binary::ScanRange,
+        assets: &mut Vec<Asset>,
+    ) -> Result<()> {
+        let end = range
+            .start
+            .checked_add(range.length)
+            .ok_or_else(|| anyhow!("Scan range exceeds file bounds"))?;
+
+        if end > self.mmap.len() {
+            return Err(anyhow!("Scan range exceeds file bounds"));
+        }
+
         let mut offset = range.start;
         let mut step = 8; // Initial alignment
 
@@ -60,7 +77,7 @@ impl Dumper {
             offset += step;
         }
 
-        Ok(assets)
+        Ok(())
     }
 
     /// Attempts to parse an asset at the given file offset.
@@ -79,13 +96,17 @@ impl Dumper {
     }
 
     /// Reads an asset header from the given offset.
-    fn read_header(&self, offset: usize) -> Result<&AssetHeader> {
+    fn read_header(&self, offset: usize) -> Result<AssetHeader> {
         if offset + ASSET_HEADER_SIZE > self.mmap.len() {
             return Err(anyhow!("Header offset out of bounds"));
         }
 
-        let chunk = &self.mmap[offset..offset + ASSET_HEADER_SIZE];
-        Ok(unsafe { &*(chunk.as_ptr() as *const AssetHeader) })
+        Ok(AssetHeader {
+            name_ptr: self.parser.read_pointer(&self.mmap, offset)?,
+            name_len: binary::read_u64(&self.mmap, offset + 8)?,
+            data_ptr: self.parser.read_pointer(&self.mmap, offset + 16)?,
+            data_size: binary::read_u64(&self.mmap, offset + 24)?,
+        })
     }
 
     /// Validates that the pointers point to valid data.
