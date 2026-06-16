@@ -1,6 +1,7 @@
 mod common;
 
 use assert_cmd::Command;
+use predicates::prelude::*;
 use predicates::str::contains;
 use std::fs;
 
@@ -17,6 +18,26 @@ fn cli_lists_assets_as_json() {
         .success()
         .stdout(contains("\"asset_count\": 1"))
         .stdout(contains("/index.html"));
+}
+
+#[test]
+fn cli_lists_assets_as_tree() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("app");
+    fs::write(&input, common::nested_desktop_elf()).unwrap();
+
+    Command::cargo_bin("tauri-dumper")
+        .unwrap()
+        .args(["list", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(contains("Assets: 3"))
+        .stdout(contains("\u{251c}\u{2500}\u{2500} _app"))
+        .stdout(contains("\u{2514}\u{2500}\u{2500} index.html"))
+        .stdout(contains("app.js ("))
+        .stdout(contains("compressed"))
+        .stdout(contains("Compressed").not())
+        .stdout(contains("Decompressed").not());
 }
 
 #[test]

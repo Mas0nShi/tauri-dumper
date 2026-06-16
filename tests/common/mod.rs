@@ -48,6 +48,24 @@ pub fn load_config() -> &'static Config {
 }
 
 pub fn desktop_elf() -> Vec<u8> {
+    desktop_elf_with_assets(&[("/index.html", b"<!DOCTYPE html><html></html>" as &[u8])])
+}
+
+pub fn nested_desktop_elf() -> Vec<u8> {
+    desktop_elf_with_assets(&[
+        ("/index.html", b"<!DOCTYPE html><html></html>" as &[u8]),
+        (
+            "/_app/immutable/chunks/app.js",
+            b"console.log('app');" as &[u8],
+        ),
+        (
+            "/_app/immutable/assets/style.css",
+            b"body{color:#111}" as &[u8],
+        ),
+    ])
+}
+
+fn desktop_elf_with_assets(assets: &[(&str, &[u8])]) -> Vec<u8> {
     const ELF_HEADER_SIZE: usize = 64;
     const SECTION_HEADER_SIZE: usize = 64;
     const RODATA_ADDR: u64 = 0x400000;
@@ -56,19 +74,32 @@ pub fn desktop_elf() -> Vec<u8> {
     const DATA_REL_RO_OFF: usize = 0x2000;
     const SHSTRTAB_OFF: usize = 0x3000;
 
-    let html = b"<!DOCTYPE html><html></html>";
-    let compressed = brotli_compress(html);
-
     let mut rodata = Vec::new();
-    rodata.extend_from_slice(b"/index.html");
-    let data_addr = RODATA_ADDR + rodata.len() as u64;
-    rodata.extend_from_slice(&compressed);
+    let mut headers = Vec::new();
+    for (name, content) in assets {
+        let name_addr = RODATA_ADDR + rodata.len() as u64;
+        rodata.extend_from_slice(name.as_bytes());
 
-    let mut data_rel_ro = vec![0; 32];
-    write_u64(&mut data_rel_ro, 0, RODATA_ADDR);
-    write_u64(&mut data_rel_ro, 8, 11);
-    write_u64(&mut data_rel_ro, 16, data_addr);
-    write_u64(&mut data_rel_ro, 24, compressed.len() as u64);
+        let compressed = brotli_compress(content);
+        let data_addr = RODATA_ADDR + rodata.len() as u64;
+        rodata.extend_from_slice(&compressed);
+
+        headers.push((
+            name_addr,
+            name.len() as u64,
+            data_addr,
+            compressed.len() as u64,
+        ));
+    }
+
+    let mut data_rel_ro = vec![0; 32 * headers.len()];
+    for (index, (name_addr, name_len, data_addr, data_size)) in headers.into_iter().enumerate() {
+        let offset = index * 32;
+        write_u64(&mut data_rel_ro, offset, name_addr);
+        write_u64(&mut data_rel_ro, offset + 8, name_len);
+        write_u64(&mut data_rel_ro, offset + 16, data_addr);
+        write_u64(&mut data_rel_ro, offset + 24, data_size);
+    }
 
     let shstrtab = b"\0.rodata\0.data.rel.ro\0.shstrtab\0";
     let rodata_name = 1;
