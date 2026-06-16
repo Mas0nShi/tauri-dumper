@@ -14,6 +14,7 @@ Tauri Dumper is a tool to dump Tauri applications.
 | Windows | arm64 | PE | ❓ |
 | macOS | x86_64 | Mach-O | ✅ |
 | macOS | arm64 | Mach-O | ✅ |
+| Android | arm64 | ELF shared object (.so) | ✅ |
 | Linux | x86_64 | ELF | ❌ |
 | Linux | x86 | ELF | ❌ |
 | Linux | arm64 | ELF | ❌ |

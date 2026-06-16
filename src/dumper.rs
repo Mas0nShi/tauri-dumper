@@ -43,12 +43,29 @@ impl Dumper {
 
     /// Scans the binary for embedded assets.
     pub fn scan_assets(&self) -> Result<Vec<Asset>> {
-        let range = self.parser.scan_range()?;
-        let end = range.start.saturating_add(range.length);
-
-        assert!(end <= self.mmap.len(), "Scan range exceeds file bounds");
-
         let mut assets = Vec::new();
+
+        for range in self.parser.scan_ranges()? {
+            self.scan_assets_in_range(range, &mut assets)?;
+        }
+
+        Ok(assets)
+    }
+
+    fn scan_assets_in_range(
+        &self,
+        range: binary::ScanRange,
+        assets: &mut Vec<Asset>,
+    ) -> Result<()> {
+        let end = range
+            .start
+            .checked_add(range.length)
+            .ok_or_else(|| anyhow!("Scan range exceeds file bounds"))?;
+
+        if end > self.mmap.len() {
+            return Err(anyhow!("Scan range exceeds file bounds"));
+        }
+
         let mut offset = range.start;
         let mut step = 8; // Initial alignment
 
@@ -60,7 +77,7 @@ impl Dumper {
             offset += step;
         }
 
-        Ok(assets)
+        Ok(())
     }
 
     /// Attempts to parse an asset at the given file offset.

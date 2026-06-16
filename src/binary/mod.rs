@@ -1,17 +1,17 @@
 //! Binary format parsing abstractions.
 //!
 //! This module provides a unified interface for parsing different binary formats
-//! (PE, Mach-O, ELF) with format-specific pointer resolution strategies.
+//! (PE, Mach-O, Android ELF) with format-specific pointer resolution strategies.
 
-mod elf;
+mod android_elf;
 mod macho;
 mod pe;
 
 use anyhow::Result;
-use object::{BinaryFormat, Object, ObjectSection, Relocation, RelocationFlags};
+use object::{BinaryFormat, Object, ObjectKind, ObjectSection, Relocation, RelocationFlags};
 use std::collections::HashMap;
 
-pub use elf::ElfParser;
+pub use android_elf::AndroidElfParser;
 pub use macho::MachOParser;
 pub use pe::PeParser;
 
@@ -37,9 +37,9 @@ pub struct ScanRange {
 pub trait BinaryParser: Send + Sync {
     /// Reads a pointer-sized field from the binary.
     ///
-    /// Most formats store the pointer value directly in the file. ELF shared
-    /// objects can store zeroes in relocated pointer fields and keep the target
-    /// address in RELA addends, so parsers may override this.
+    /// Most formats store the pointer value directly in the file. Android ELF
+    /// shared objects can store zeroes in relocated pointer fields and keep the
+    /// target address in RELA addends, so parsers may override this.
     fn read_pointer(&self, data: &[u8], offset: usize) -> Result<u64> {
         read_u64(data, offset)
     }
@@ -49,8 +49,8 @@ pub trait BinaryParser: Send + Sync {
     /// This handles format-specific pointer encoding (e.g., Mach-O chained fixups).
     fn resolve_pointer(&self, raw_ptr: u64) -> Result<u64>;
 
-    /// Returns the scan range for searching assets in the binary.
-    fn scan_range(&self) -> Result<ScanRange>;
+    /// Returns the scan ranges for searching assets in the binary.
+    fn scan_ranges(&self) -> Result<Vec<ScanRange>>;
 }
 
 /// Creates the appropriate binary parser based on the detected format.
@@ -67,10 +67,16 @@ pub fn create_parser(data: &[u8]) -> Result<Box<dyn BinaryParser>> {
             Ok(Box::new(MachOParser::new(data, sections)?))
         }
         BinaryFormat::Elf => {
-            let sections = collect_elf_sections(&obj);
-            let scan_sections = collect_elf_scan_sections(&obj);
-            let relative_relocations = collect_elf_relative_relocations(&obj, &sections);
-            Ok(Box::new(ElfParser::new(
+            if obj.kind() != ObjectKind::Dynamic {
+                anyhow::bail!(
+                    "Unsupported ELF format: only Android Tauri shared libraries are supported"
+                );
+            }
+
+            let sections = collect_android_elf_sections(&obj);
+            let scan_sections = collect_android_elf_scan_sections(&obj);
+            let relative_relocations = collect_android_elf_relative_relocations(&obj, &sections);
+            Ok(Box::new(AndroidElfParser::new(
                 sections,
                 scan_sections,
                 relative_relocations,
@@ -103,14 +109,14 @@ fn collect_pe_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
         .collect()
 }
 
-fn collect_elf_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
+fn collect_android_elf_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
     obj.sections()
         .filter(|s| s.address() != 0)
         .filter_map(section_info)
         .collect()
 }
 
-fn collect_elf_scan_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
+fn collect_android_elf_scan_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
     let mut sections = obj
         .sections()
         .filter_map(|s| {
@@ -133,7 +139,7 @@ fn collect_elf_scan_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
     sections.into_iter().map(|(_, section)| section).collect()
 }
 
-fn collect_elf_relative_relocations<'a>(
+fn collect_android_elf_relative_relocations<'a>(
     obj: &object::File<'a>,
     sections: &[SectionInfo],
 ) -> HashMap<u64, u64> {

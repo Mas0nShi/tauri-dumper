@@ -112,16 +112,16 @@ impl BinaryParser for MachOParser {
         self.va_to_file_offset(va)
     }
 
-    fn scan_range(&self) -> Result<ScanRange> {
+    fn scan_ranges(&self) -> Result<Vec<ScanRange>> {
         // Asset headers are stored in __DATA_CONST,__const section (last in our list)
         let section = self
             .sections
             .last()
             .context("No sections found for scanning")?;
 
-        Ok(ScanRange {
+        Ok(vec![ScanRange {
             start: section.file_offset as usize,
             length: section.size as usize,
-        })
+        }])
     }
 }

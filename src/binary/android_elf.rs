@@ -1,29 +1,29 @@
-//! ELF binary format parser.
+//! Android ELF shared object parser.
 
 use super::{read_u64, BinaryParser, ScanRange, SectionInfo};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 
-/// ELF binary parser with support for Android shared object RELA addends.
-pub struct ElfParser {
+/// Android ELF parser with support for shared object RELA addends.
+pub struct AndroidElfParser {
     sections: Vec<SectionInfo>,
     scan_sections: Vec<SectionInfo>,
     relative_relocations: HashMap<u64, u64>,
 }
 
-impl ElfParser {
-    /// Creates a new ELF parser with file-backed address sections and scan sections.
+impl AndroidElfParser {
+    /// Creates a new Android ELF parser with file-backed address sections and scan sections.
     pub fn new(
         sections: Vec<SectionInfo>,
         scan_sections: Vec<SectionInfo>,
         relative_relocations: HashMap<u64, u64>,
     ) -> Result<Self> {
         if sections.is_empty() {
-            anyhow::bail!("No file-backed sections found in ELF file");
+            anyhow::bail!("No file-backed sections found in Android ELF shared object");
         }
 
         if scan_sections.is_empty() {
-            anyhow::bail!("No supported asset section found in ELF file");
+            anyhow::bail!("No supported Android Tauri asset section found in ELF shared object");
         }
 
         Ok(Self {
@@ -43,7 +43,7 @@ impl ElfParser {
     }
 }
 
-impl BinaryParser for ElfParser {
+impl BinaryParser for AndroidElfParser {
     fn read_pointer(&self, data: &[u8], offset: usize) -> Result<u64> {
         if let Some(addend) = self.relative_relocations.get(&(offset as u64)) {
             return Ok(*addend);
@@ -56,15 +56,14 @@ impl BinaryParser for ElfParser {
         self.va_to_file_offset(raw_ptr)
     }
 
-    fn scan_range(&self) -> Result<ScanRange> {
-        let section = self
+    fn scan_ranges(&self) -> Result<Vec<ScanRange>> {
+        Ok(self
             .scan_sections
-            .first()
-            .context("No sections found for scanning")?;
-
-        Ok(ScanRange {
-            start: section.file_offset as usize,
-            length: section.size as usize,
-        })
+            .iter()
+            .map(|section| ScanRange {
+                start: section.file_offset as usize,
+                length: section.size as usize,
+            })
+            .collect())
     }
 }

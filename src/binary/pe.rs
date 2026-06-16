@@ -33,15 +33,15 @@ impl BinaryParser for PeParser {
         }
     }
 
-    fn scan_range(&self) -> Result<ScanRange> {
+    fn scan_ranges(&self) -> Result<Vec<ScanRange>> {
         let section = self
             .sections
             .first()
             .context("No sections found for scanning")?;
 
-        Ok(ScanRange {
+        Ok(vec![ScanRange {
             start: section.file_offset as usize,
             length: section.size as usize,
-        })
+        }])
     }
 }
