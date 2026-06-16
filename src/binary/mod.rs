@@ -7,8 +7,9 @@ mod elf;
 mod macho;
 mod pe;
 
-use anyhow::Result;
+use crate::error::{Error, Result};
 use object::{BinaryFormat, Object, ObjectSection, Relocation, RelocationFlags};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub use elf::ElfParser;
@@ -16,7 +17,7 @@ pub use macho::MachOParser;
 pub use pe::PeParser;
 
 /// Information about a section in the binary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SectionInfo {
     pub virtual_address: u64,
     pub file_offset: u64,
@@ -24,10 +25,33 @@ pub struct SectionInfo {
 }
 
 /// Defines the scan range for asset searching.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScanRange {
     pub start: usize,
     pub length: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BinaryKind {
+    Pe,
+    MachO,
+    Elf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryMetadata {
+    pub kind: BinaryKind,
+    pub architecture: String,
+    pub file_size: usize,
+    pub sha256: String,
+    pub source_path: Option<String>,
+}
+
+pub struct ParsedBinary {
+    pub parser: Box<dyn BinaryParser>,
+    pub kind: BinaryKind,
+    pub architecture: String,
 }
 
 /// Trait for binary format-specific parsing operations.
@@ -54,40 +78,51 @@ pub trait BinaryParser: Send + Sync {
 }
 
 /// Creates the appropriate binary parser based on the detected format.
-pub fn create_parser(data: &[u8]) -> Result<Box<dyn BinaryParser>> {
+pub fn create_parser(data: &[u8]) -> Result<ParsedBinary> {
     let obj = object::File::parse(data)?;
+    let architecture = format!("{:?}", obj.architecture());
 
     match obj.format() {
         BinaryFormat::Pe => {
             let sections = collect_pe_sections(&obj);
-            Ok(Box::new(PeParser::new(sections)?))
+            Ok(ParsedBinary {
+                parser: Box::new(PeParser::new(sections)?),
+                kind: BinaryKind::Pe,
+                architecture,
+            })
         }
         BinaryFormat::MachO => {
             let sections = collect_macho_sections(&obj);
-            Ok(Box::new(MachOParser::new(data, sections)?))
+            Ok(ParsedBinary {
+                parser: Box::new(MachOParser::new(data, sections)?),
+                kind: BinaryKind::MachO,
+                architecture,
+            })
         }
         BinaryFormat::Elf => {
             let sections = collect_elf_sections(&obj);
             let scan_sections = collect_elf_scan_sections(&obj);
             let relative_relocations = collect_elf_relative_relocations(&obj, &sections);
-            Ok(Box::new(ElfParser::new(
-                sections,
-                scan_sections,
-                relative_relocations,
-            )?))
+            Ok(ParsedBinary {
+                parser: Box::new(ElfParser::new(
+                    sections,
+                    scan_sections,
+                    relative_relocations,
+                )?),
+                kind: BinaryKind::Elf,
+                architecture,
+            })
         }
-        other => anyhow::bail!("Unsupported binary format: {:?}", other),
+        other => Err(Error::UnsupportedFormat(format!("{other:?}"))),
     }
 }
 
 pub(crate) fn read_u64(data: &[u8], offset: usize) -> Result<u64> {
-    let end = offset
-        .checked_add(8)
-        .ok_or_else(|| anyhow::anyhow!("Pointer offset out of bounds"))?;
-    let bytes = data
-        .get(offset..end)
-        .ok_or_else(|| anyhow::anyhow!("Pointer offset out of bounds"))?;
-    Ok(u64::from_le_bytes(bytes.try_into()?))
+    let end = offset.checked_add(8).ok_or(Error::PointerOutOfBounds)?;
+    let bytes = data.get(offset..end).ok_or(Error::PointerOutOfBounds)?;
+    Ok(u64::from_le_bytes(
+        bytes.try_into().map_err(|_| Error::PointerOutOfBounds)?,
+    ))
 }
 
 fn collect_pe_sections<'a>(obj: &object::File<'a>) -> Vec<SectionInfo> {
@@ -137,19 +172,43 @@ fn collect_elf_relative_relocations<'a>(
     obj: &object::File<'a>,
     sections: &[SectionInfo],
 ) -> HashMap<u64, u64> {
-    obj.dynamic_relocations()
+    let mut relocations = obj
+        .dynamic_relocations()
         .into_iter()
         .flatten()
         .filter_map(|(address, relocation)| {
-            if !is_elf_relative_relocation(&relocation) || relocation.has_implicit_addend() {
-                return None;
-            }
-
-            let addend = u64::try_from(relocation.addend()).ok()?;
-            let file_offset = va_to_file_offset(sections, address)?;
-            Some((file_offset, addend))
+            relative_relocation_file_offset(sections, address, &relocation)
         })
-        .collect()
+        .collect::<HashMap<_, _>>();
+
+    for section in obj.sections() {
+        for (address, relocation) in section.relocations() {
+            let address = va_to_file_offset(sections, address)
+                .map(|_| address)
+                .unwrap_or_else(|| section.address().saturating_add(address));
+            if let Some((file_offset, addend)) =
+                relative_relocation_file_offset(sections, address, &relocation)
+            {
+                relocations.entry(file_offset).or_insert(addend);
+            }
+        }
+    }
+
+    relocations
+}
+
+fn relative_relocation_file_offset(
+    sections: &[SectionInfo],
+    address: u64,
+    relocation: &Relocation,
+) -> Option<(u64, u64)> {
+    if !is_elf_relative_relocation(relocation) || relocation.has_implicit_addend() {
+        return None;
+    }
+
+    let addend = u64::try_from(relocation.addend()).ok()?;
+    let file_offset = va_to_file_offset(sections, address)?;
+    Some((file_offset, addend))
 }
 
 fn is_elf_relative_relocation(relocation: &Relocation) -> bool {
