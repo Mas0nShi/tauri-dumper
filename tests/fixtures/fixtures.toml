@@ -68,6 +68,23 @@ expected_asset_count = 6
 expected_index_html_size = 1984
 
 # =============================================================================
+# LibreTV
+# =============================================================================
+
+[[fixture]]
+name = "libretv"
+format = "elf"
+arch = "x64"
+repo = "KeyRotate/LibreTV-App"
+version = "v1.0.144"
+pattern = "libretv_1.0.144_amd64.deb"
+extract_dir = "libretv_linux"
+binary = "usr/bin/app"
+description = "Linux x86_64 ELF from DEB package with direct asset pointers"
+expected_asset_count = 56
+expected_index_html_size = 39267
+
+# =============================================================================
 # EndWikiPlus
 # =============================================================================
 

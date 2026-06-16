@@ -53,6 +53,7 @@ jobs:
             tests/fixtures/*_app
             tests/fixtures/*_win
             tests/fixtures/*_android
+            tests/fixtures/*_linux
           key: fixtures-v2-${{ hashFiles('tests/fixtures/fixtures.toml') }}
 
       - name: Download fixtures

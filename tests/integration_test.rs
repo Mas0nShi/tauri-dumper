@@ -209,6 +209,23 @@ mod edge_cases {
     }
 
     #[test]
+    fn extracts_assets_from_desktop_elf_with_direct_pointers() {
+        let elf = make_desktop_tauri_elf_fixture();
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        fs::write(temp.path(), elf).unwrap();
+
+        let file = File::open(temp.path()).unwrap();
+        let dumper = Dumper::new(file).unwrap();
+        let assets = dumper.scan_assets().unwrap();
+
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].name, "/index.html");
+
+        let decompressed = dumper.decompress_asset(&assets[0]).unwrap();
+        assert_eq!(decompressed, b"<!DOCTYPE html><html></html>");
+    }
+
+    #[test]
     fn reject_invalid_binary() {
         let temp = tempfile::NamedTempFile::new().unwrap();
         fs::write(temp.path(), b"not a valid binary").unwrap();
@@ -524,6 +541,128 @@ mod edge_cases {
         write_section_header(
             &mut elf,
             shdr + SECTION_HEADER_SIZE * 5,
+            SectionHeader {
+                name: shstrtab_name as u32,
+                typ: 3,
+                flags: 0,
+                addr: 0,
+                offset: SHSTRTAB_OFF as u64,
+                size: shstrtab.len() as u64,
+                link: 0,
+                info: 0,
+                align: 1,
+                entsize: 0,
+            },
+        );
+
+        elf
+    }
+
+    fn make_desktop_tauri_elf_fixture() -> Vec<u8> {
+        const ELF_HEADER_SIZE: usize = 64;
+        const PROGRAM_HEADER_SIZE: usize = 56;
+        const SECTION_HEADER_SIZE: usize = 64;
+
+        const RODATA_ADDR: u64 = 0x400000;
+        const DATA_REL_RO_ADDR: u64 = 0x500000;
+
+        const RODATA_OFF: usize = 0x1000;
+        const DATA_REL_RO_OFF: usize = 0x2000;
+        const SHSTRTAB_OFF: usize = 0x3000;
+
+        let html = b"<!DOCTYPE html><html></html>";
+        let compressed = brotli_compress(html);
+
+        let mut rodata = Vec::new();
+        rodata.extend_from_slice(b"/index.html");
+        let data_addr = RODATA_ADDR + rodata.len() as u64;
+        rodata.extend_from_slice(&compressed);
+
+        let mut data_rel_ro = vec![0; 32];
+        write_u64(&mut data_rel_ro, 0, RODATA_ADDR);
+        write_u64(&mut data_rel_ro, 8, 11);
+        write_u64(&mut data_rel_ro, 16, data_addr);
+        write_u64(&mut data_rel_ro, 24, compressed.len() as u64);
+
+        let shstrtab = b"\0.rodata\0.data.rel.ro\0.shstrtab\0";
+        let rodata_name = 1;
+        let data_rel_ro_name = rodata_name + b".rodata\0".len();
+        let shstrtab_name = data_rel_ro_name + b".data.rel.ro\0".len();
+
+        let section_header_off = SHSTRTAB_OFF + shstrtab.len();
+        let mut elf = vec![0; section_header_off + SECTION_HEADER_SIZE * 4];
+
+        elf[0..4].copy_from_slice(b"\x7fELF");
+        elf[4] = 2; // 64-bit
+        elf[5] = 1; // little endian
+        elf[6] = 1; // ELF version
+        write_u16(&mut elf, 16, 2); // ET_EXEC
+        write_u16(&mut elf, 18, 62); // EM_X86_64
+        write_u32(&mut elf, 20, 1);
+        write_u64(&mut elf, 32, ELF_HEADER_SIZE as u64);
+        write_u64(&mut elf, 40, section_header_off as u64);
+        write_u16(&mut elf, 52, ELF_HEADER_SIZE as u64);
+        write_u16(&mut elf, 54, PROGRAM_HEADER_SIZE as u64);
+        write_u16(&mut elf, 56, 1);
+        write_u16(&mut elf, 58, SECTION_HEADER_SIZE as u64);
+        write_u16(&mut elf, 60, 4);
+        write_u16(&mut elf, 62, 3);
+
+        write_program_header(
+            &mut elf,
+            ELF_HEADER_SIZE,
+            ProgramHeader {
+                typ: 1,
+                flags: 6,
+                offset: 0,
+                vaddr: 0,
+                paddr: 0,
+                filesz: (DATA_REL_RO_OFF + data_rel_ro.len()) as u64,
+                memsz: (DATA_REL_RO_OFF + data_rel_ro.len()) as u64,
+                align: 0x1000,
+            },
+        );
+
+        elf[RODATA_OFF..RODATA_OFF + rodata.len()].copy_from_slice(&rodata);
+        elf[DATA_REL_RO_OFF..DATA_REL_RO_OFF + data_rel_ro.len()].copy_from_slice(&data_rel_ro);
+        elf[SHSTRTAB_OFF..SHSTRTAB_OFF + shstrtab.len()].copy_from_slice(shstrtab);
+
+        let shdr = section_header_off;
+        write_section_header(
+            &mut elf,
+            shdr + SECTION_HEADER_SIZE,
+            SectionHeader {
+                name: rodata_name as u32,
+                typ: 1,
+                flags: 2,
+                addr: RODATA_ADDR,
+                offset: RODATA_OFF as u64,
+                size: rodata.len() as u64,
+                link: 0,
+                info: 0,
+                align: 1,
+                entsize: 0,
+            },
+        );
+        write_section_header(
+            &mut elf,
+            shdr + SECTION_HEADER_SIZE * 2,
+            SectionHeader {
+                name: data_rel_ro_name as u32,
+                typ: 1,
+                flags: 3,
+                addr: DATA_REL_RO_ADDR,
+                offset: DATA_REL_RO_OFF as u64,
+                size: data_rel_ro.len() as u64,
+                link: 0,
+                info: 0,
+                align: 8,
+                entsize: 0,
+            },
+        );
+        write_section_header(
+            &mut elf,
+            shdr + SECTION_HEADER_SIZE * 3,
             SectionHeader {
                 name: shstrtab_name as u32,
                 typ: 3,
