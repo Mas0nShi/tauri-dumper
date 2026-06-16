@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and upload, for example v0.2.0'
+        required: true
+        type: string
 
 env:
   PROJECT_NAME: ${{ github.event.repository.name }}
@@ -27,13 +33,15 @@ jobs:
             target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
-          # - os: ubuntu-latest
-          #   target: x86_64-unknown-linux-gnu
-          # - os: ubuntu-latest
-          #   target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -45,12 +53,24 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Install Linux cross toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
       - name: Build binary
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Strip binary (macOS & Linux)
         if: runner.os != 'Windows'
-        run: strip "target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }}"
+        shell: bash
+        run: |
+          strip_cmd="strip"
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            strip_cmd="aarch64-linux-gnu-strip"
+          fi
+          "${strip_cmd}" "target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }}"
 
       - name: Package artifact
         shell: bash
@@ -94,5 +114,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: Release ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           generate_release_notes: true
+          overwrite_files: true
