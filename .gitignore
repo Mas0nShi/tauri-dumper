@@ -5,3 +5,4 @@ tests/fixtures/*
 !tests/fixtures/fixtures.toml
 
 .vscode/
+.DS_Store
